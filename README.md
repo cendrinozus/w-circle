@@ -167,7 +167,11 @@ git commit -m "update: ..."
 git push
 
 # Sur le VPS
+# 2. Récupérer les changements
 cd ~/w-circle/w-circle && git pull
+
+# 3. Copier vers /opt/wcercle et rebuild
+cp remixed-daaf7b8c.html /opt/wcercle/
 cd /opt/wcercle
 docker compose build --no-cache
 docker compose up -d web
