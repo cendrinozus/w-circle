@@ -2,6 +2,10 @@
 
 Application web statique servie par Nginx dans Docker, avec HTTPS automatique via Let's Encrypt (Certbot).
 
+- **Domaine** : winners-circle.vip
+- **Serveur** : VPS Debian (vps-254e8651)
+- **Destination** : `/opt/wcercle`
+
 ---
 
 ## Prérequis
@@ -19,47 +23,43 @@ Application web statique servie par Nginx dans Docker, avec HTTPS automatique vi
 ## Structure du projet
 
 ```
-w-cercle/
+w-circle/
 ├── Dockerfile                  # Image nginx:alpine + fichier HTML
 ├── docker-compose.yml          # Services web (Nginx) + certbot
 ├── deploy.sh                   # Script de déploiement automatisé
 ├── remixed-daaf7b8c.html       # Application (fichier unique)
 └── docs/
     ├── nginx-http.conf         # Config Nginx phase 1 (HTTP)
-    └── nginx-https.conf        # Config Nginx phase 2 (HTTPS, template)
+    ├── nginx-https.conf        # Config Nginx phase 2 (HTTPS, template)
+    └── nginx-active.conf       # Config active (générée par deploy.sh)
 ```
 
 ---
 
 ## Déploiement automatisé (recommandé)
 
-Le script `deploy.sh` gère l'intégralité du déploiement en 4 phases.
-
-### 1. Copier le projet sur le serveur
+### 1. Cloner le repo sur le VPS
 
 ```bash
-# Depuis votre machine locale
-scp -r /chemin/vers/w-cercle user@ip-serveur:/opt/wcercle
-```
-
-Ou via Git si le projet est sur un dépôt :
-
-```bash
-git clone https://github.com/votre-compte/w-cercle.git /opt/wcercle
+# Sur le VPS, depuis le home
+git clone https://github.com/cendrinozus/w-circle.git ~/w-circle/w-circle
+cd ~/w-circle/w-circle
 ```
 
 ### 2. Lancer le script
 
+**Toujours lancer deploy.sh depuis le repo git (`~/w-circle/w-circle`), pas depuis `/opt/wcercle`.**
+
 ```bash
-cd /opt/wcercle
+cd ~/w-circle/w-circle
 sudo bash deploy.sh
 ```
 
 Le script vous demande interactivement :
 
 ```
-Domaine (ex: wcercle.monsite.com) : wcercle.monsite.com
-Email Let's Encrypt (notifications expiration) : votre@email.com
+Domaine (ex: wcercle.monsite.com) : winners-circle.vip
+Email Let's Encrypt (notifications expiration) : cendrinozus@gmail.com
 ```
 
 ### 3. Ce que fait le script automatiquement
@@ -67,18 +67,18 @@ Email Let's Encrypt (notifications expiration) : votre@email.com
 | Phase | Action |
 |-------|--------|
 | **1** | Installe Docker si absent |
-| **2** | Build l'image Nginx + démarre le conteneur en HTTP (port 80) |
-| **3** | Certbot valide le domaine et obtient le certificat SSL |
-| **4** | Bascule Nginx en HTTPS, démarre le renouvellement automatique |
-| **5** | Ajoute un cron quotidien pour recharger Nginx après renouvellement |
+| **2** | Copie les fichiers vers `/opt/wcercle`, build l'image Nginx |
+| **3** | Démarre Nginx en HTTP (port 80), télécharge l'image Certbot |
+| **4** | Obtient le certificat SSL via Certbot (webroot) |
+| **5** | Bascule Nginx en HTTPS, démarre le renouvellement automatique |
 
-À la fin, le site est accessible en **https://votre-domaine.com**.
+À la fin, le site est accessible en **https://winners-circle.vip**.
 
 ---
 
 ## Déploiement manuel étape par étape
 
-Si vous préférez contrôler chaque étape manuellement.
+Si le script échoue à mi-chemin, voici comment reprendre manuellement.
 
 ### Étape 1 — Installer Docker
 
@@ -100,56 +100,42 @@ sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo systemctl enable --now docker
 ```
 
-Vérification :
+### Étape 2 — Démarrer Nginx en HTTP
 
 ```bash
-docker --version
-docker compose version
-```
-
-### Étape 2 — Préparer le projet
-
-```bash
-sudo mkdir -p /opt/wcercle
-sudo cp -r /chemin/vers/w-cercle/. /opt/wcercle/
 cd /opt/wcercle
-```
-
-### Étape 3 — Démarrer Nginx en HTTP
-
-```bash
 cp docs/nginx-http.conf docs/nginx-active.conf
 docker compose build
 docker compose up -d web
 ```
 
-Vérification :
+### Étape 3 — Obtenir le certificat SSL
+
+> **Note :** si `docker compose run --rm certbot` reste bloqué à "Created" sans produire de sortie,
+> utiliser `docker run` directement (plus fiable) :
 
 ```bash
-docker compose ps
-curl -I http://votre-domaine.com
-# → HTTP/1.1 200 OK
-```
-
-### Étape 4 — Obtenir le certificat SSL
-
-```bash
-docker compose run --rm certbot certbot certonly \
+docker run --rm \
+  -v wcercle_certbot_webroot:/var/www/certbot \
+  -v wcercle_certbot_certs:/etc/letsencrypt \
+  certbot/certbot certonly \
     --webroot \
     --webroot-path /var/www/certbot \
-    --email votre@email.com \
+    --email cendrinozus@gmail.com \
     --agree-tos \
     --no-eff-email \
-    -d votre-domaine.com
+    -d winners-circle.vip
 ```
 
-Le certificat est stocké dans le volume Docker `wcercle_certbot_certs`.
+Résultat attendu : `Successfully received certificate.`
 
-### Étape 5 — Activer HTTPS
+### Étape 4 — Activer HTTPS
 
 ```bash
-# Remplacer DOMAIN par votre domaine dans la config HTTPS
-sed "s/DOMAIN/votre-domaine.com/g" docs/nginx-https.conf > docs/nginx-active.conf
+cd /opt/wcercle
+
+# Utiliser sudo tee (évite l'erreur "Permission denied")
+sed "s/DOMAIN/winners-circle.vip/g" docs/nginx-https.conf | sudo tee docs/nginx-active.conf > /dev/null
 
 # Recharger Nginx
 docker compose exec web nginx -s reload
@@ -158,35 +144,31 @@ docker compose exec web nginx -s reload
 Vérification :
 
 ```bash
-curl -I https://votre-domaine.com
+curl -I https://winners-circle.vip
 # → HTTP/2 200
 ```
 
-### Étape 6 — Démarrer le renouvellement automatique
+### Étape 5 — Démarrer le renouvellement automatique
 
 ```bash
 docker compose up -d certbot
-```
-
-Ajouter un cron pour recharger Nginx après chaque renouvellement :
-
-```bash
-(crontab -l 2>/dev/null; echo "0 4 * * * cd /opt/wcercle && docker compose exec web nginx -s reload >> /var/log/wcercle-ssl-reload.log 2>&1") | crontab -
 ```
 
 ---
 
 ## Mettre à jour le site
 
-Après modification du fichier HTML :
+Après modification du fichier HTML, depuis le repo local :
 
 ```bash
+# Local — commit et push
+git add remixed-daaf7b8c.html
+git commit -m "update: ..."
+git push
+
+# Sur le VPS
+cd ~/w-circle/w-circle && git pull
 cd /opt/wcercle
-
-# Mettre à jour les fichiers
-cp /chemin/nouveau/fichier.html remixed-daaf7b8c.html
-
-# Rebuild et redémarrage
 docker compose build --no-cache
 docker compose up -d web
 ```
@@ -196,7 +178,9 @@ docker compose up -d web
 ## Commandes utiles
 
 ```bash
-# Voir l'état des conteneurs
+# Depuis /opt/wcercle
+
+# État des conteneurs
 docker compose ps
 
 # Logs Nginx en direct
@@ -205,67 +189,60 @@ docker compose logs -f web
 # Logs Certbot
 docker compose logs -f certbot
 
-# Arrêter les conteneurs
+# Arrêter
 docker compose down
 
-# Redémarrer
-docker compose restart web
-
-# Recharger la config Nginx sans coupure
+# Recharger Nginx sans coupure
 docker compose exec web nginx -s reload
 
 # Tester le renouvellement SSL (dry-run)
 docker compose run --rm certbot certbot renew --dry-run
-```
 
----
-
-## Vérifier le certificat SSL
-
-```bash
-# Informations sur le certificat
-docker compose run --rm certbot certbot certificates
-
-# Test SSL externe
-curl -I https://votre-domaine.com
-```
-
----
-
-## Pare-feu (UFW)
-
-Si UFW est actif sur le serveur :
-
-```bash
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw reload
+# Voir les certificats
+docker run --rm -v wcercle_certbot_certs:/etc/letsencrypt certbot/certbot certificates
 ```
 
 ---
 
 ## Dépannage
 
+**Certbot bloqué à "Created" sans produire de sortie**
+→ Utiliser `docker run` directement (voir Étape 3 du déploiement manuel).
+
+**Permission denied sur docs/nginx-active.conf**
+→ Utiliser `sudo tee` au lieu de `>` :
+```bash
+sed "s/DOMAIN/winners-circle.vip/g" docs/nginx-https.conf | sudo tee docs/nginx-active.conf > /dev/null
+```
+
+**Erreur "same file" lors de deploy.sh**
+→ Lancer deploy.sh depuis `~/w-circle/w-circle`, jamais depuis `/opt/wcercle`.
+
 **Certbot échoue avec "connection refused" ou "timeout"**
-→ Vérifiez que le DNS pointe bien vers l'IP du serveur : `dig votre-domaine.com`
-→ Vérifiez que les ports 80/443 sont ouverts dans le pare-feu et chez votre hébergeur.
+→ Vérifier que Nginx est démarré et que le port 80 est accessible :
+```bash
+docker compose ps
+curl -I http://winners-circle.vip
+```
 
 **Nginx ne démarre pas**
 ```bash
 docker compose logs web
-# Vérifier la config active :
 cat docs/nginx-active.conf
 ```
 
 **Certificat expiré**
 ```bash
-docker compose run --rm certbot certbot renew --force-renewal
+docker run --rm \
+  -v wcercle_certbot_webroot:/var/www/certbot \
+  -v wcercle_certbot_certs:/etc/letsencrypt \
+  certbot/certbot renew --force-renewal
 docker compose exec web nginx -s reload
 ```
 
 **Repartir de zéro**
 ```bash
 docker compose down -v   # supprime aussi les volumes (certificats compris)
-docker compose build --no-cache
-# → relancer depuis l'étape 3
+sudo rm -rf /opt/wcercle
+# → relancer depuis ~/w-circle/w-circle avec sudo bash deploy.sh
 ```
