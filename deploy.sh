@@ -52,8 +52,19 @@ fi
 
 # --- Copie du projet ---
 info "Copie des fichiers vers $APP_DIR..."
-mkdir -p "$APP_DIR"
-cp -r "$SCRIPT_DIR/." "$APP_DIR/"
+if [ "$(realpath "$SCRIPT_DIR")" = "$(realpath "$APP_DIR")" ]; then
+    warn "Script lancé depuis $APP_DIR — copie temporaire puis recréation..."
+    TMP_DIR=$(mktemp -d)
+    cp -r "$SCRIPT_DIR/." "$TMP_DIR/"
+    cd /tmp
+    rm -rf "$APP_DIR"
+    mkdir -p "$APP_DIR"
+    cp -r "$TMP_DIR/." "$APP_DIR/"
+    rm -rf "$TMP_DIR"
+else
+    mkdir -p "$APP_DIR"
+    cp -r "$SCRIPT_DIR/." "$APP_DIR/"
+fi
 cd "$APP_DIR"
 
 # ── PHASE 1 : HTTP uniquement ────────────────────────────────────────────────
