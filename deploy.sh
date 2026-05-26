@@ -79,6 +79,9 @@ docker compose ps | grep -q "Up" || error "Nginx n'a pas démarré. Vérifiez : 
 info "Nginx HTTP actif ✓"
 
 # ── PHASE 2 : Obtention du certificat ───────────────────────────────────────
+info "Phase 2 — Téléchargement de l'image Certbot..."
+docker compose pull certbot
+
 info "Phase 2 — Obtention du certificat Let's Encrypt pour $DOMAIN..."
 docker compose run --rm certbot certbot certonly \
     --webroot \
